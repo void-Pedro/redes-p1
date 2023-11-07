@@ -2,11 +2,12 @@
 import asyncio
 from tcp import Servidor
 import re
-
+apelidosUsados = {}
+canais = {}
+dados_residuais = b''
 
 def validar_nome(nome):
     return re.match(br'^[a-zA-Z][a-zA-Z0-9_-]*$', nome) is not None
-
 
 def sair(conexao):
     print(conexao, 'conexão fechada')
@@ -16,13 +17,62 @@ def sair(conexao):
 def dados_recebidos(conexao, dados):
     if dados == b'':
         return sair(conexao)
+    
+    dados = trataDados(conexao, dados)
+    
+    
+    for dado in dados:
+        comando = dado.split(b'', 1)[0]
+        if comando == b'PING':
+            cmdPing(conexao, dado)
+        elif comando == b'NICK':
+            cmdNick(conexao, dado)
+        elif comando == b'PART':
+            cmdPart(conexao, dado)
+            
     print(conexao, dados)
 
 
 def conexao_aceita(conexao):
     print(conexao, 'nova conexão')
+    conexao.dados_residuais = b''
     conexao.registrar_recebedor(dados_recebidos)
 
+# Resolução do Passo 1
+def cmdPing(conexao, dado):
+    resposta = b':server PONG server :'
+    resposta += dados.split(b'', 1)[1]
+    conexao.enviar(resposta)
+    
+#def cmdNick(conexao, dado):
+#def cmdPart(conexao, dado):
+
+# Resolução do Passo 2
+def trataEntradas(conexao, dados):
+    """
+    Função criada para tratar as entradas. Situações suportadas:
+        Uma mensagem do tipo "linha\r\n" pode ser quebrada em várias partes. Por exemplo, podemos receber primeiro "lin", depois "h" e depois "a\r\n".
+        
+        Duas ou mais mensagens podem ser recebidas de uma só vez. Por exemplo, podemos receber "linha 1\r\nlinha 2\r\nlinha 3\r\n".
+        
+        As duas coisas também podem acontecer ao mesmo tempo. Podemos receber, por exemplo, algo do tipo "a 1\r\nlinha 2\r\nli".
+    """
+    if conexao.dados_residuais != b'':
+        dados = conexao.dados_residuais + dados
+        conexao.dados_residuais = b''
+        
+    if b'\n' in dados:
+        dados = dados.split(b'\n')
+        for i in range(len(dados) - 1):
+                dados[i] = dados[i] + b'\n'
+        if dados[-1] != b'\n':
+            conexao.dados_residuais = dados[-1]
+            dados[-1] = b''
+    else: # Último comando incompleto
+        conexao.dados_residuais = conexao.dados_residuais + dados
+        dados = []
+    return dados
+    
 
 servidor = Servidor(6667)
 servidor.registrar_monitor_de_conexoes_aceitas(conexao_aceita)
