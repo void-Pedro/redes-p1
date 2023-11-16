@@ -1,3 +1,11 @@
+'''
+Trabalho feito por:
+    Pedro Henrique Borges - RA 804071
+    
+Passos feitos até o momento (ir atualizando conforme for fazendo): 1-4
+'''
+
+
 #!/usr/bin/env python3
 import asyncio
 from tcp import Servidor
@@ -18,7 +26,7 @@ def dados_recebidos(conexao, dados):
     if dados == b'':
         return sair(conexao)
     
-    dados = trataDados(conexao, dados)
+    dados = trataEntradas(conexao, dados)
     
     
     for dado in dados:
@@ -39,12 +47,41 @@ def conexao_aceita(conexao):
     conexao.registrar_recebedor(dados_recebidos)
 
 # Resolução do Passo 1
-def cmdPing(conexao, dado):
+def cmdPing(conexao, dados):
     resposta = b':server PONG server :'
-    resposta += dados.split(b'', 1)[1]
+    resposta += dados.split(b'', 1)[1] # Resposta + payload
     conexao.enviar(resposta)
-    
-#def cmdNick(conexao, dado):
+
+# Resolução do Passo 3/4
+def cmdNick(conexao, dados):
+    nickAntigo = encontraUsuario(conexao)
+    nick = dados.split(b'', 1)[1]
+    valido = validar_nome(nick)
+    if not valido:
+        conexao.enviar(b'server 432 apelido_atual apelido :Erroneous nickname')
+        return
+    else: 
+        if(nick.lower() in apelidosUsados):
+            conexao.enviar (b':server 433 ' + nickAntigo + b' ' + nick + b' :Nickname is already in use\r\n')
+            return
+        
+        # Usuário não definiu o apelido ainda
+        elif(nick.lower() not in apelidosUsados and nickAntigo == b'guest'):
+            apelidosUsados[nick.lower()] = conexao
+            conexao.enviar(b':server 001 ' + nick + b' :Welcome\r\n')
+            conexao.enviar(b':server 422 ' + nick + b' :MOTD File is missing\r\n')
+            return
+        
+        # Usuário quer trocar o apelido
+        else:
+            apelidosUsados[nick.lower()] = apelidosUsados.pop(nickAntigo.lower())
+            conexao.enviar(b':' + nickAntigo + b' NICK ' + nick + b'\r\n')
+            return
+            
+            
+        
+        
+        
 #def cmdPart(conexao, dado):
 
 # Resolução do Passo 2
@@ -60,7 +97,8 @@ def trataEntradas(conexao, dados):
     if conexao.dados_residuais != b'':
         dados = conexao.dados_residuais + dados
         conexao.dados_residuais = b''
-        
+    
+    # Verifica se existe um comando "completo" nos dados
     if b'\n' in dados:
         dados = dados.split(b'\n')
         for i in range(len(dados) - 1):
@@ -72,7 +110,13 @@ def trataEntradas(conexao, dados):
         conexao.dados_residuais = conexao.dados_residuais + dados
         dados = []
     return dados
-    
+
+# Função para encontrar o nick do usuário baseado na conexão (auxilio para o passo 3/4)
+def encontraUsuario(conexao):
+    for chave, valor in apelidosUsados.items():
+        if conexao == valor:
+            return chave
+    return b'guest'
 
 servidor = Servidor(6667)
 servidor.registrar_monitor_de_conexoes_aceitas(conexao_aceita)
