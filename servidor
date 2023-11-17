@@ -35,8 +35,8 @@ def dados_recebidos(conexao, dados):
             cmdPing(conexao, dado)
         elif comando == b'NICK':
             cmdNick(conexao, dado)
-        elif comando == b'PART':
-            cmdPart(conexao, dado)
+        #elif comando == b'PRIVMSG':
+            
             
     print(conexao, dados)
 
@@ -54,7 +54,7 @@ def cmdPing(conexao, dados):
 
 # Resolução do Passo 3/4
 def cmdNick(conexao, dados):
-    nickAntigo = encontraUsuario(conexao)
+    nickAntigo = usuarioConexao(conexao)
     nick = dados.split(b'', 1)[1]
     valido = validar_nome(nick)
     if not valido:
@@ -77,9 +77,14 @@ def cmdNick(conexao, dados):
             apelidosUsados[nick.lower()] = apelidosUsados.pop(nickAntigo.lower())
             conexao.enviar(b':' + nickAntigo + b' NICK ' + nick + b'\r\n')
             return
-            
-            
-        
+
+# Resolução do Passo 5
+def privMsg(conexao, destinatario, dados):
+    destinatario = dados.split(b'', 1)[1]
+    msg = dados.split(b'', 1)[2]
+    remetente = usuarioConexao(conexao)
+    if destinatario.lower() not in apelidosUsados:
+        return
         
         
 #def cmdPart(conexao, dado):
@@ -112,7 +117,7 @@ def trataEntradas(conexao, dados):
     return dados
 
 # Função para encontrar o nick do usuário baseado na conexão (auxilio para o passo 3/4)
-def encontraUsuario(conexao):
+def usuarioConexao(conexao):
     for chave, valor in apelidosUsados.items():
         if conexao == valor:
             return chave
