@@ -20,6 +20,26 @@ def validar_nome(nome):
 def sair(conexao):
     print(conexao, 'conexão fechada')
     conexao.fechar()
+    nick = usuarioConexao(conexao)
+    if nick is None or nick == b'*':
+        return
+    
+    for canal in canais:
+        if nick.lower() in canais[canal.lower()]:
+            msg = b':' + nick + b' QUIT :Connection closed' + b'\r\n'
+            msgList(conexao, canal, msg)
+            users = canais[canal].copy()
+            users.remove(nick.lower())
+            if users is None:
+                canais.pop(canal.lower())
+                apelidosUsados.pop(nick.lower())
+                return
+            
+            # senão, só atualize os usuarios
+            canais[canal.lower()] = users
+    # removendo o usuario dos Nomes cadastrados
+    apelidosUsados.pop(nick.lower())
+    return
 
 
 def dados_recebidos(conexao, dados):
@@ -35,8 +55,15 @@ def dados_recebidos(conexao, dados):
             cmdPing(conexao, dado)
         elif comando == b'NICK':
             cmdNick(conexao, dado)
-        #elif comando == b'PRIVMSG':
-            
+        elif comando == b'PRIVMSG':
+            destinatario, dest_msg = dado.split(b' :', 1)
+            destinatario = destinatario.split(b' ')[1]
+            msg = b':' + encontraUsuario(conexao) + b' PRIVMSG ' + destinatario + b' :' + dest_msg
+            privMsg(conexao, destinatario, msg)
+        elif comando == b'JOIN':
+            cmdJoin(conexao, dado)
+        elif comando == b'PART':
+            cmdPart(conexao, dado)
             
     print(conexao, dados)
 
@@ -79,15 +106,87 @@ def cmdNick(conexao, dados):
             return
 
 # Resolução do Passo 5
-def privMsg(conexao, destinatario, dados):
-    destinatario = dados.split(b'', 1)[1]
-    msg = dados.split(b'', 1)[2]
+def privMsg(conexao, destinatario, mensagem):
     remetente = usuarioConexao(conexao)
+
+    if destinatario.startswith(b'#'): # Se for canal
+        comando = mensagem.split(b' ', 3)[1]
+        usuarios = canais[canal.lower()].copy()
+        if comando == b'PRIVMSG' or comando == b'QUIT':
+            usuarios.remove(encontraUsuario(conexao).lower())
+        for usuario in usuarios:
+            privMsg(conexao, usuario, mensagem)
+        return
     if destinatario.lower() not in apelidosUsados:
         return
-        
-        
-#def cmdPart(conexao, dado):
+    dest = usuarioConexao(destinatario.lower())
+    dest.enviar(mensagem)
+    return    
+    
+# Resolução do Passo 6
+def cmdJoin(conexao, dados):
+    canal = removeDado(dados)
+
+    # Validando o nome do canal
+    if (validar_nome(canal.split(b'#')[1]) is None) or canal[0] != 35:
+        conexao.enviar(b':server 403 '  + canal + b' :No such channel\r\n')
+        return
+    
+    usuario = usuarioConexao(conexao)
+    if canal.lower() not in canais: # Se canal existe
+        canais[canal.lower()] = [usuario]
+    elif canal.lower() in canais: # Se não
+        if usuario not in canais[canal.lower()]:
+            var_user = canais[canal.lower()]
+            var_user.append(usuario)
+            var_user.sort()
+            canais[canal.lower()] = var_user
+            del var_user
+        else:
+            # Caso o usuario esteja no canal
+            return
+
+    msg = b':' + usuario + b' JOIN :' + canal + b'\r\n'
+    privMsg(conexao, canal, msg)
+    
+    # Usuários do canal
+    membros = canais[canal.lower()].copy()
+    membros.sort()
+
+    # Mensagem base a ser recortada para envio
+    base = b':server 353 '+ usuario + b' = ' + canal + b' :'
+    msg = base + membros[0]
+
+    for i in range(1, len(membros)):
+        membro = membros[i]
+        if len(msg + membro + b' ' + b'\r\n') < 512:
+            msg = msg + b' ' + membro
+        else:
+            conexao.enviar(msg + '\r\n')
+            msg = base + b' ' + membro
+    
+    conexao.enviar(msg + b'\r\n')
+
+    # Mensagem de servidor 366
+    msg = b':server 366 ' + usuario + b' ' + canal + b' :End of /NAMES list.\r\n'
+    conexao.enviar(msg)
+   
+    return  
+    
+def cmdPart(conexao, dados):
+    canal = dados[0].split(b' ')[1]
+    canal = canal.split(b'\r\n')[0]
+    
+    usuario = usuarioConexao(conexao)
+    
+    msg = b':' + usuario + b' PART ' + canal + b'\r\n'
+    privMsg(conexao, canal, msg)
+    
+    usuarios = canais[canal.lower()]
+    usuarios.remove(usuario.lower())
+    canais[canal] = usuarios
+    if canais[canal.lower()] is None:
+        canais.pop(canal.lower())
 
 # Resolução do Passo 2
 def trataEntradas(conexao, dados):
@@ -116,7 +215,7 @@ def trataEntradas(conexao, dados):
         dados = []
     return dados
 
-# Função para encontrar o nick do usuário baseado na conexão (auxilio para o passo 3/4)
+# Função auxiliar para encontrar o nick do usuário baseado na conexão
 def usuarioConexao(conexao):
     for chave, valor in apelidosUsados.items():
         if conexao == valor:
